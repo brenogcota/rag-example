@@ -1,0 +1,35 @@
+# --- Segredos / configuração local ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.Python
+build/
+dist/
+
+# --- Modelos de embedding baixados (sentence-transformers) ---
+# (por padrão ficam em ~/.cache, mas caso algum script salve localmente)
+.cache/
+models/
+
+# --- Docker / Postgres ---
+# Volumes nomeados no docker-compose (vector_data, users_data) já ficam
+# fora do repo por padrão — isto aqui é só para o caso de alguém usar bind mounts
+pgdata/
+*.sql.bak
+
+# --- Editores / SO ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log

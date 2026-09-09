@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  # Banco vetorial — armazena documentos, chunks e embeddings (pgvector)
+  db-vector:
+    image: pgvector/pgvector:pg16
+    container_name: rag-db-vector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ragdb
+    ports:
+      - "5433:5432"
+    volumes:
+      - vector_data:/var/lib/postgresql/data
+      - ./init-db-vector:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Banco de usuários — contas, sessões de chat e histórico de mensagens
+  db-users:
+    image: postgres:16
+    container_name: rag-db-users
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: usersdb
+    ports:
+      - "5434:5432"
+    volumes:
+      - users_data:/var/lib/postgresql/data
+      - ./init-db-users:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d usersdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Adminer — UI web simples para inspecionar os dois bancos (opcional)
+  adminer:
+    image: adminer
+    container_name: rag-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db-vector
+      - db-users
+
+volumes:
+  vector_data:
+  users_data:
