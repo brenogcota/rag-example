@@ -1,0 +1,36 @@
+# Segredos: as variáveis chegam via env_file/-e, nunca copiadas para a imagem
+.env
+
+# Ambiente local — a imagem monta o seu próprio venv
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Git / editores / SO
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Não fazem parte do runtime da aplicação
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+init-db-users/
+init-db-vector/
+*.log
+.cache/
+models/
+pgdata/

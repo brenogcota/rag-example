@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # Banco vetorial — armazena documentos, chunks e embeddings (pgvector)
   db-vector:
@@ -41,6 +39,34 @@ services:
       timeout: 5s
       retries: 10
 
+  # Aplicação RAG — ETL, chat CLI e API web (imagem construída pelo Dockerfile)
+  app:
+    build:
+      context: .
+      args:
+        PYTHON_VERSION: "3.12"
+    image: rag-producao:latest
+    container_name: rag-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Dentro da rede do Compose os bancos atendem pelo nome do serviço na
+      # porta 5432 — isto sobrescreve os localhost:5433/5434 do .env, que
+      # continuam valendo para quem roda fora do Docker.
+      RAGDB_URL: postgresql://postgres:postgres@db-vector:5432/ragdb
+      USERSDB_URL: postgresql://postgres:postgres@db-users:5432/usersdb
+    ports:
+      - "8000:8000"
+    volumes:
+      # Cache dos modelos de embedding: sobrevive a rebuilds da imagem
+      - hf_cache:/opt/hf-cache
+    depends_on:
+      db-vector:
+        condition: service_healthy
+      db-users:
+        condition: service_healthy
+
   # Adminer — UI web simples para inspecionar os dois bancos (opcional)
   adminer:
     image: adminer
@@ -55,3 +81,4 @@ services:
 volumes:
   vector_data:
   users_data:
+  hf_cache:

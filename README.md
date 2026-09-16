@@ -52,8 +52,61 @@ e políticas de acesso diferentes — vale a pena separá-los desde cedo.
 ## Pré-requisitos
 
 - Docker + Docker Compose
-- Python 3.10+
 - Uma conta gratuita na [Groq Console](https://console.groq.com/keys) para gerar sua `GROQ_API_KEY`
+- Python 3.10+ **apenas** se você quiser rodar fora do Docker (ver [Passo a passo](#passo-a-passo));
+  pelo caminho Docker a versão do Python e as dependências vêm prontas na imagem
+
+---
+
+## Rodando tudo com Docker (qualquer máquina)
+
+O `Dockerfile` cuida da versão do Python (3.12), do virtualenv e do
+`requirements.txt` — a única coisa que a máquina precisa ter é Docker.
+O modelo de embedding também já vem baixado dentro da imagem, então o
+primeiro ETL não espera download.
+
+```bash
+cp .env.example .env        # preencha a GROQ_API_KEY
+docker compose up --build   # bancos + aplicação
+```
+
+Chat web em <http://localhost:8000>, Adminer em <http://localhost:8080>.
+
+O `ENTRYPOINT` da imagem é o próprio `main.py`, então os comandos da CLI
+funcionam do mesmo jeito, em containers descartáveis:
+
+```bash
+# ETL de páginas reais
+docker compose run --rm app etl https://pt.wikipedia.org/wiki/Aprendizado_de_máquina
+
+# Pergunta via CLI
+docker compose run --rm app chat breno "o que é aprendizado de máquina?"
+
+# Logs da API e parada do ambiente
+docker compose logs -f app
+docker compose down          # acrescente -v para apagar também os dados
+```
+
+Detalhes que valem saber:
+
+- **`RAGDB_URL` / `USERSDB_URL`** são sobrescritos no `docker-compose.yml` para
+  `db-vector:5432` e `db-users:5432` (nomes de serviço da rede do Compose). Os
+  valores `localhost:5433/5434` do seu `.env` continuam valendo para execução
+  fora do Docker — não precisa manter dois arquivos.
+- **`torch` é instalado na variante CPU-only**, o que evita ~2,5 GB de
+  bibliotecas CUDA que não seriam usadas.
+- **Build em dois estágios**: compilador e cache de pip ficam no estágio
+  `builder`; a imagem final leva só o venv, o cache do modelo e o código.
+- **O container roda como usuário sem privilégios** (`app`, uid 1000) e expõe um
+  `HEALTHCHECK` em `/health` — o `depends_on` do Compose só sobe a aplicação
+  depois que os dois Postgres estão saudáveis.
+- **`.env` nunca entra na imagem** (está no `.dockerignore`); os segredos chegam
+  em tempo de execução via `env_file`.
+- **Cache dos modelos** fica no volume `hf_cache`, então trocar o
+  `EMBEDDING_MODEL` não exige rebuild.
+
+> As seções abaixo descrevem a execução local com virtualenv próprio, útil para
+> desenvolver com hot reload ou depurar fora do container.
 
 ---
 
@@ -171,7 +224,9 @@ limite de tamanho de URL e vaza menos conteúdo em logs de acesso.
 
 ```
 .
-├── docker-compose.yml          # dois bancos Postgres + Adminer
+├── Dockerfile                  # imagem da aplicação (Python + venv + deps + modelo)
+├── .dockerignore
+├── docker-compose.yml          # dois bancos Postgres + Adminer + a aplicação
 ├── init-db-vector/01-schema.sql   # documents, chunks, embedding vector(384), índice HNSW
 ├── init-db-users/01-schema.sql    # users, chat_sessions, chat_messages
 ├── .env.example
