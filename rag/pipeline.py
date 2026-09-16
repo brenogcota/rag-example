@@ -4,7 +4,7 @@ via Groq, e persiste a conversa no banco de usuários (histórico + rastreio
 de quais chunks embasaram cada resposta).
 """
 from rag.retriever import search
-from rag.generator import generate
+from rag.generator import generate, generate_stream
 from db import get_usersdb_connection
 
 
@@ -76,3 +76,53 @@ def ask(username: str, question: str, session_id: int | None = None, top_k: int 
         "retrieved": retrieved,
         "answer": answer,
     }
+
+
+def ask_stream(username: str, question: str, session_id: int | None = None, top_k: int = 4):
+    """
+    Versão streaming de `ask`, pensada para a API web.
+
+    Produz uma sequência de eventos (dicts) na ordem em que ficam prontos:
+      {"type": "session", ...}  -> id da sessão (o front guarda para continuar a conversa)
+      {"type": "sources", ...}  -> trechos recuperados, antes de a geração começar
+      {"type": "token", ...}    -> pedaços da resposta, conforme o LLM produz
+      {"type": "done", ...}     -> fim, com a resposta completa
+
+    A persistência no db-users acontece só no final, quando a resposta
+    inteira já foi montada — mantendo a mesma rastreabilidade de `ask`.
+    """
+    user_id = get_or_create_user(username)
+    if session_id is None:
+        session_id = create_session(user_id)
+    yield {"type": "session", "session_id": session_id}
+
+    retrieved = search(question, top_k=top_k)
+    yield {
+        "type": "sources",
+        "sources": [
+            {
+                "chunk_id": r["chunk_id"],
+                "title": r["title"],
+                "source_url": r["source_url"],
+                "similarity": r["similarity"],
+            }
+            for r in retrieved
+        ],
+    }
+
+    chunk_ids = [r["chunk_id"] for r in retrieved]
+
+    if not retrieved:
+        answer = "Não encontrei nenhum conteúdo relevante na base de conhecimento para responder isso."
+        yield {"type": "token", "text": answer}
+    else:
+        parts: list[str] = []
+        for delta in generate_stream(question, retrieved):
+            parts.append(delta)
+            yield {"type": "token", "text": delta}
+        answer = "".join(parts)
+
+    save_message(session_id, "user", question, chunk_ids)
+    save_message(session_id, "assistant", answer, chunk_ids)
+
+    yield {"type": "done", "session_id": session_id, "answer": answer}

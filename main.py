@@ -4,6 +4,7 @@ CLI de entrada do sistema RAG de produção.
 Uso:
     python main.py etl <url1> <url2> ...
     python main.py chat <username> "<pergunta>"
+    python main.py serve [porta]        # abre o chat web em http://localhost:8000
 """
 import sys
 
@@ -37,6 +38,12 @@ def main():
 
         print("\n--- Resposta ---")
         print(result["answer"])
+
+    elif command == "serve":
+        import uvicorn
+        port = int(sys.argv[2]) if len(sys.argv) > 2 else 8000
+        print(f"Chat web em http://localhost:{port}")
+        uvicorn.run("web.app:app", host="0.0.0.0", port=port, reload=False)
 
     else:
         print(f"Comando desconhecido: {command}\n")

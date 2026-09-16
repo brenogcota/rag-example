@@ -42,7 +42,7 @@ RESPOSTA:"""
 def generate(query: str, retrieved: list[dict]) -> str:
     prompt = build_prompt(query, retrieved)
     client = get_client()
-    model = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
     response = client.chat.completions.create(
         model=model,
@@ -54,3 +54,29 @@ def generate(query: str, retrieved: list[dict]) -> str:
         max_tokens=600,
     )
     return response.choices[0].message.content
+
+
+def generate_stream(query: str, retrieved: list[dict]):
+    """
+    Mesma geração de `generate`, mas em streaming: devolve os pedaços de
+    texto conforme a Groq os produz, em vez de esperar a resposta completa.
+    """
+    prompt = build_prompt(query, retrieved)
+    client = get_client()
+    model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Você é um assistente técnico preciso e objetivo."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=600,
+        stream=True,
+    )
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta

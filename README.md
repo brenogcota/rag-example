@@ -2,7 +2,8 @@
 
 Sistema RAG completo e funcional: dois bancos Postgres via Docker Compose
 (um vetorial com pgvector, outro de usuários), um ETL real que baixa
-páginas da web, e geração via API real da Groq.
+páginas da web, geração via API real da Groq e um chat web com resposta
+em streaming.
 
 > ✅ Todo o SQL e a lógica de banco deste projeto foram testados contra uma
 > instância real de Postgres 16 + pgvector 0.6 antes da entrega.
@@ -33,6 +34,12 @@ páginas da web, e geração via API real da Groq.
         │  retriever (busca) ────┘                                     │
         │  generator (Groq API) ──────────> resposta                   │
         │  pipeline (orquestra + salva no db-users) ────────────────────┘
+        └───────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼──────────────────────────────────────┐
+        │   Web (web/)          │                                      │
+        │  app.py (FastAPI) ─── POST /stream ──> SSE token a token     │
+        │  static/index.html ── widget de chat no navegador            │
         └───────────────────────────────────────────────────────────┘
 ```
 
@@ -111,6 +118,53 @@ Isso executa:
 3. Persistência da pergunta + resposta em `db-users` (`rag/pipeline.py`), com
    rastreamento de quais `chunk_ids` embasaram a resposta
 
+### 6. Abra o chat web (resposta em streaming)
+
+```bash
+python main.py serve          # ou: python main.py serve 8001
+```
+
+Abra `http://localhost:8000`. O widget de chat fica no canto inferior
+direito: digite a pergunta, e a resposta aparece **token a token**,
+com as fontes recuperadas exibidas antes mesmo de a geração começar.
+
+**Como o streaming funciona:**
+
+```
+navegador ──POST /stream {"message": "..."}──> FastAPI
+                                                  │
+                                    rag.pipeline.ask_stream()
+                                                  │
+navegador <──── text/event-stream ────────────────┘
+```
+
+O endpoint devolve Server-Sent Events, um frame por evento do pipeline:
+
+| Evento | Quando | Payload |
+|---|---|---|
+| `session` | logo no início | `{"session_id": 12}` — o front guarda para continuar a mesma conversa |
+| `sources` | após a busca vetorial, antes da geração | lista de chunks com `title`, `source_url`, `similarity` |
+| `token` | conforme a Groq produz | `{"text": "pedaço"}` |
+| `done` | ao final | `{"session_id": 12, "answer": "resposta completa"}` |
+| `error` | falha no meio do stream | `{"message": "..."}` |
+
+Testando o endpoint direto no terminal:
+
+```bash
+curl -N -X POST http://localhost:8000/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "O que é retrieval-augmented generation?"}'
+```
+
+Há também `GET /stream?message=...`, compatível com a API `EventSource`
+nativa do navegador. O widget usa o `POST` + `fetch`/`ReadableStream`
+porque `EventSource` só faz `GET` — mandar a pergunta no corpo evita
+limite de tamanho de URL e vaza menos conteúdo em logs de acesso.
+
+> A conversa só é gravada em `chat_messages` quando o stream termina —
+> aí a resposta completa já está montada, e a rastreabilidade por
+> `retrieved_chunk_ids` continua igual à do modo CLI.
+
 ---
 
 ## Estrutura do projeto
@@ -131,9 +185,12 @@ Isso executa:
 │   └── run_etl.py              # orquestra o ETL completo
 ├── rag/
 │   ├── retriever.py            # busca por similaridade de cosseno no pgvector
-│   ├── generator.py            # chamada real à API da Groq
-│   └── pipeline.py             # retrieve -> generate -> salva no db-users
-└── main.py                     # CLI: `etl` e `chat`
+│   ├── generator.py            # `generate` (bloco) e `generate_stream` (streaming)
+│   └── pipeline.py             # `ask` (bloco) e `ask_stream` (eventos p/ a web)
+├── web/
+│   ├── app.py                  # FastAPI: GET /, POST|GET /stream (SSE), GET /health
+│   └── static/index.html       # widget de chat, sem dependência de front-end
+└── main.py                     # CLI: `etl`, `chat` e `serve`
 ```
 
 ---
@@ -150,6 +207,11 @@ Isso executa:
 - **Idempotência do ETL**: rodar o ETL de novo para a mesma URL
   atualiza o documento (`ON CONFLICT ... DO UPDATE`) e refaz os chunks
   do zero — seguro para reprocessar conteúdo que mudou.
+- **Streaming ponta a ponta**: a Groq entrega a resposta em pedaços
+  (`stream=True`), `ask_stream` repassa cada pedaço como evento, e o
+  FastAPI o escreve na conexão aberta. Nada fica bufferizado no meio do
+  caminho — por isso o header `X-Accel-Buffering: no`, que impede o nginx
+  (se houver um na frente) de segurar os frames até o fim.
 - **Rastreabilidade**: cada mensagem salva em `chat_messages` guarda
   `retrieved_chunk_ids` — dá para auditar exatamente qual trecho da
   base gerou qual resposta, essencial para debugar alucinações.
@@ -160,7 +222,7 @@ Isso executa:
 
 | Tema | O que evoluir |
 |---|---|
-| Segurança | Hash de senha / OAuth para usuários; secrets fora do `.env` (Vault, AWS Secrets Manager) |
+| Segurança | Hash de senha / OAuth para usuários; secrets fora do `.env` (Vault, AWS Secrets Manager); CORS e rate limit no `/stream` |
 | Qualidade de recuperação | Busca híbrida (vetor + BM25) e re-ranking |
 | Observabilidade | Logar latência de cada etapa (retrieval, geração), taxa de "sem contexto relevante" |
 | Escala do ETL | Fila de jobs (ex.: Celery/RQ) em vez de execução síncrona por URL |
