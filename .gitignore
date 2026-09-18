@@ -33,3 +33,6 @@ Thumbs.db
 
 # --- Logs ---
 *.log
+# Planilhas locais para ingestão (a pasta fica versionada, o conteúdo não)
+dados/*
+!dados/.gitkeep

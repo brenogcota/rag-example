@@ -34,3 +34,6 @@ init-db-vector/
 .cache/
 models/
 pgdata/
+
+# Planilhas de ingestão: entram por volume no compose, não pela imagem
+dados/
