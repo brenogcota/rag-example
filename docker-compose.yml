@@ -61,9 +61,6 @@ services:
     volumes:
       # Cache dos modelos de embedding: sobrevive a rebuilds da imagem
       - hf_cache:/opt/hf-cache
-      # Planilhas a ingerir: `docker compose run --rm app etl dados/vendas.xlsx`
-      # lê o arquivo que está em ./dados aqui no host, somente leitura.
-      - ./dados:/app/dados:ro
     depends_on:
       db-vector:
         condition: service_healthy

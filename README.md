@@ -25,7 +25,6 @@ em streaming.
                               │                        │
         ┌─────────────────────┼────────────────────────┼────────────┐
         │   ETL (etl/)          │                        │            │
-        │  web + planilhas       │                        │            │
         │  extract -> transform  │                        │            │
         │  -> embed -> load ─────┘                        │            │
         └───────────────────────────────────────────────────────────┘
@@ -79,10 +78,6 @@ funcionam do mesmo jeito, em containers descartáveis:
 ```bash
 # ETL de páginas reais
 docker compose run --rm app etl https://pt.wikipedia.org/wiki/Aprendizado_de_máquina
-
-# ETL de planilhas — coloque os arquivos em ./dados (montado como /app/dados)
-docker compose run --rm app etl dados/vendas.xlsx dados/clientes.csv
-docker compose run --rm app etl dados          # a pasta inteira de uma vez
 
 # Pergunta via CLI
 docker compose run --rm app chat breno "o que é aprendizado de máquina?"
@@ -150,52 +145,19 @@ pip install -r requirements.txt
 > ~90MB) automaticamente via `sentence-transformers`. Depois disso ele fica
 > em cache local — não é chamado de novo pela rede.
 
-### 4. Rode o ETL com páginas web e planilhas reais
+### 4. Rode o ETL com páginas web reais
 
 ```bash
 python main.py etl \
   "https://en.wikipedia.org/wiki/Retrieval-augmented_generation" \
   "https://en.wikipedia.org/wiki/Large_language_model"
-
-# planilhas: arquivo, vários arquivos, pasta inteira ou URL
-python main.py etl dados/vendas.xlsx dados/clientes.csv dados/legado.xls
-python main.py etl dados
-python main.py etl "https://exemplo.com/export/relatorio.csv"
 ```
 
 Isso executa o pipeline completo:
-1. **Extract** (`etl/extract.py`) — baixa o HTML e extrai o texto dos parágrafos,
-   ou lê a planilha (`.csv`, `.tsv`, `.xlsx`, `.xlsm`, `.xls`) com pandas
+1. **Extract** (`etl/extract.py`) — baixa o HTML e extrai o texto dos parágrafos
 2. **Transform** (`etl/transform.py`) — limpa e fragmenta em chunks com overlap
 3. **Embed** (`etl/embed.py`) — gera embeddings locais (384 dimensões)
 4. **Load** (`etl/load.py`) — salva tudo em `db-vector`
-
-#### Como uma planilha vira texto buscável
-
-Uma tabela não pode ir crua para o embedding: `Salvador,BA,1200` sozinho não
-tem significado. Por isso cada linha é serializada com o nome da coluna junto
-do valor, e cada chunk repete o cabeçalho da tabela:
-
-```
-Tabela: vendas.xlsx — Vendas | Colunas: produto, categoria, cep, preco
-produto: Produto 1 | categoria: Eletrônico | cep: 01310-100 | preco: 13.50
-produto: Produto 2 | categoria: Livro      | cep: 40010-000 | preco: 27.00
-```
-
-Decisões que importam nessa etapa:
-
-- **Uma aba = um documento.** A `source_url` vira `caminho.xlsx#Vendas`, então a
-  resposta do chat consegue citar a aba exata de onde veio o número.
-- **Chunk por linha, nunca no meio dela** (`chunk_records` em `transform.py`):
-  agrupa registros inteiros até o orçamento de palavras, com sobreposição de
-  uma linha entre chunks vizinhos.
-- **Tudo é lido como texto** (`dtype=str`): CEP, CPF e código de produto não
-  viram float nem perdem o zero à esquerda no caminho.
-- **Células vazias são omitidas** do registro, em vez de virar ruído `coluna: nan`.
-- **CSV**: separador (`,` `;` `\t`) detectado automaticamente e fallback de
-  encoding utf-8 -> latin-1, que cobre os exports do Excel em português.
-- **Teto de 50 mil linhas por aba** (`MAX_ROWS` em `extract.py`), para um
-  arquivo gigante não estourar memória nem a geração de embeddings.
 
 ### 5. Converse com o sistema (RAG real + LLM real)
 
@@ -265,15 +227,14 @@ limite de tamanho de URL e vaza menos conteúdo em logs de acesso.
 ├── Dockerfile                  # imagem da aplicação (Python + venv + deps + modelo)
 ├── .dockerignore
 ├── docker-compose.yml          # dois bancos Postgres + Adminer + a aplicação
-├── dados/                      # planilhas locais p/ ingestão (montada em /app/dados)
 ├── init-db-vector/01-schema.sql   # documents, chunks, embedding vector(384), índice HNSW
 ├── init-db-users/01-schema.sql    # users, chat_sessions, chat_messages
 ├── .env.example
 ├── requirements.txt
 ├── db.py                       # conexões com os dois bancos
 ├── etl/
-│   ├── extract.py              # páginas web (requests + BeautifulSoup) e planilhas (pandas)
-│   ├── transform.py            # limpeza + chunking com overlap (texto e tabelas)
+│   ├── extract.py              # baixa páginas web reais (requests + BeautifulSoup)
+│   ├── transform.py            # limpeza + chunking com overlap
 │   ├── embed.py                # embeddings locais (sentence-transformers)
 │   ├── load.py                 # grava em db-vector
 │   └── run_etl.py              # orquestra o ETL completo
@@ -284,7 +245,7 @@ limite de tamanho de URL e vaza menos conteúdo em logs de acesso.
 ├── web/
 │   ├── app.py                  # FastAPI: GET /, POST|GET /stream (SSE), GET /health
 │   └── static/index.html       # widget de chat, sem dependência de front-end
-└── main.py                     # CLI: `etl` (URLs e planilhas), `chat` e `serve`
+└── main.py                     # CLI: `etl`, `chat` e `serve`
 ```
 
 ---

@@ -2,7 +2,7 @@
 CLI de entrada do sistema RAG de produção.
 
 Uso:
-    python main.py etl <fonte1> <fonte2> ...   # URLs e/ou planilhas (csv, tsv, xlsx, xlsm, xls)
+    python main.py etl <url1> <url2> ...
     python main.py chat <username> "<pergunta>"
     python main.py serve [porta]        # abre o chat web em http://localhost:8000
 """
@@ -18,12 +18,11 @@ def main():
 
     if command == "etl":
         from etl.run_etl import run
-        sources = sys.argv[2:]
-        if not sources:
-            print('Uso: python main.py etl <fonte1> <fonte2> ...')
-            print('  fonte = URL de página web, arquivo .csv/.tsv/.xlsx/.xlsm/.xls, ou diretório')
+        urls = sys.argv[2:]
+        if not urls:
+            print('Uso: python main.py etl <url1> <url2> ...')
             sys.exit(1)
-        run(sources)
+        run(urls)
 
     elif command == "chat":
         if len(sys.argv) < 4:
